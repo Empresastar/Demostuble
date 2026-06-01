@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stumble Guys Mobile - Spike Knockback Fixed</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; user-select: none; background: #02020a; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        
+        /* TELA DE AVISO */
+        #aviso-orientacao {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #09090e; color: white; z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        #aviso-orientacao h2 { margin-bottom: 10px; color: #ff0055; text-shadow: 0 0 10px #ff0055; }
+        
+        .icone-giro {
+            width: 60px; height: 60px; border: 4px solid #fff; border-radius: 10px;
+            margin-top: 20px; animation: girar 2s infinite ease-in-out;
+        }
+        @keyframes girar {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(-90deg); }
+            100% { transform: rotate(-90deg); }
+        }
+
+        @media (orientation: landscape) {
+            #aviso-orientacao { display: none !important; }
+        }
+
+        /* BOTÃO TELA CHEIA */
+        #btn-fullscreen {
+            position: absolute; top: 15px; left: 15px;
+            padding: 8px 14px; background: rgba(5, 5, 15, 0.8);
+            color: #00ffff; border: 2px solid #00ffff; border-radius: 5px;
+            font-weight: bold; font-size: 11px; z-index: 20;
+            touch-action: none; cursor: pointer; box-shadow: 0 0 10px #00ffff;
+        }
+        #btn-fullscreen:active { background: #00ffff; color: #000; }
+
+        /* CONTROLES MOBILE */
+        .joystick-zone {
+            position: absolute; bottom: 25px; left: 40px;
+            width: 110px; height: 110px;
+            background: rgba(255,255,255,0.05); border: 2px solid #00ffff; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; touch-action: none;
+            z-index: 10; box-shadow: 0 0 15px rgba(0,255,255,0.2);
+        }
+        #joystick-stick {
+            width: 45px; height: 45px; background: #00ffff; border-radius: 50%;
+            position: absolute; pointer-events: none; box-shadow: 0 0 15px #00ffff;
+        }
+        .btn-action {
+            position: absolute; bottom: 35px; width: 65px; height: 65px;
+            border-radius: 50%; border: none; font-weight: bold; font-size: 13px;
+            color: white; touch-action: none; z-index: 10; text-shadow: 0 1px 2px #000;
+        }
+        .btn-action:active { transform: translateY(3px); }
+        #btn-soco { right: 120px; background: #ff0055; box-shadow: 0 5px #880022, 0 0 15px #ff0055; }
+        #btn-pulo { right: 35px; background: #00a2ff; box-shadow: 0 5px #005588, 0 0 15px #00a2ff; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="aviso-orientacao">
+        <h2>BLOCK DASH MOBILE</h2>
+        <p>Gire o celular de lado para jogar!</p>
+        <div class="icone-giro"></div>
+    </div>
+
+    <button id="btn-fullscreen">TELA CHEIA</button>
+
+    <div id="canvas-container"></div>
+
+    <div class="joystick-zone" id="joystick-container">
+        <div id="joystick-stick"></div>
+    </div>
+    <button class="btn-action" id="btn-soco">SOCO</button>
+    <button class="btn-action" id="btn-pulo">PULO</button>
+
+    <script>
+        // --- CONFIGURAÇÃO TELA CHEIA ---
+        const btnFullscreen = document.getElementById('btn-fullscreen');
+        function alternarTelaCheia() {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                const docEl = document.documentElement;
+                if (docEl.requestFullscreen) docEl.requestFullscreen();
+                else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+                btnFullscreen.innerText = "SAIR DA TELA";
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                btnFullscreen.innerText = "TELA CHEIA";
+            }
+        }
+        btnFullscreen.addEventListener('touchstart', (e) => { e.preventDefault(); alternarTelaCheia(); });
+
+        // --- CONFIGURAÇÃO THREE.JS ---
+        const cena = new THREE.Scene();
+        cena.background = new THREE.Color(0x02020a);
+        cena.fog = new THREE.FogExp2(0x02020a, 0.025);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderizador = new THREE.WebGLRenderer({ antialias: true });
+        renderizador.setSize(window.innerWidth, window.innerHeight);
+        renderizador.shadowMap.enabled = true;
+        document.getElementById('canvas-container').appendChild(renderizador.domElement);
+
+        const luzAmbiente = new THREE.AmbientLight(0xffffff, 0.5);
+        cena.add(luzAmbiente);
+        
+        const luzDirecional = new THREE.DirectionalLight(0x00ffff, 0.8);
+        luzDirecional.position.set(5, 20, 5);
+        cena.add(luzDirecional);
+
+        const luzRosa = new THREE.DirectionalLight(0xff0055, 0.5);
+        luzRosa.position.set(-5, 15, -5);
+        cena.add(luzRosa);
+
+        // --- ARENA ---
+        const larguraChao = 16;
+        const comprimentoChao = 30;
+        const chaoGeo = new THREE.BoxGeometry(larguraChao, 1, comprimentoChao);
+        const chaoMat = new THREE.MeshStandardMaterial({ color: 0x070b19, roughness: 0.2, metalness: 0.5 });
+        const chao = new THREE.Mesh(chaoGeo, chaoMat);
+        chao.position.y = -0.5;
+        cena.add(chao);
+
+        const gradechao = new THREE.GridHelper(30, 30, 0x00ffff, 0x002244);
+        gradechao.position.y = 0.01;
+        cena.add(gradechao);
+
+        const bordaE = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, comprimentoChao), new THREE.MeshBasicMaterial({ color: 0xff0055 }));
+        bordaE.position.set(-larguraChao/2, 0.1, 0);
+        const bordaD = bordaE.clone(); bordaD.position.x = larguraChao/2;
+        cena.add(bordaE, bordaD);
+
+        // --- BLOCOS DASH ---
+        let listaParedes = [];
+        const velocidadeBloco = 0.13;
+        let tempoProximaParede = 0;
+        let listaBordasNeon = [];
+
+        function criarParedeBlockDash() {
+            const grupoParede = new THREE.Group();
+            grupoParede.position.z = -comprimentoChao / 2;
+
+            const sorteio = Math.random();
+            let tipoParede = "normal";
+            if (sorteio < 0.35) tipoParede = "espinho";
+            else if (sorteio < 0.65) tipoParede = "quebravel";
+
+            grupoParede.userData = { tipo: tipoParede };
+
+            const matNormal = new THREE.MeshStandardMaterial({ color: 0x002d3d, roughness: 0.1, metalness: 0.8, emissive: 0x00111a });
+            const matEspinho = new THREE.MeshStandardMaterial({ color: 0x4a0000, roughness: 0.3, metalness: 0.2, emissive: 0x220000 });
+            const matQuebravel = new THREE.MeshStandardMaterial({ color: 0x443300, roughness: 0.2, metalness: 0.8, emissive: 0x1c0e00 });
+
+            let corBorda = 0x00ffff;
+            if (tipoParede === "quebravel") corBorda = 0xffaa00;
+
+            let materialUsado = matNormal;
+            if (tipoParede === "espinho") materialUsado = matEspinho;
+            if (tipoParede === "quebravel") materialUsado = matQuebravel;
+
+            const padraoVao = Math.floor(Math.random() * 3);
+            const larguraBloco = 2.6;
+            const profundidadeBloco = 3.0;
+
+            for (let i = 0; i < 6; i++) {
+                if (tipoParede !== "quebravel") {
+                    if (padraoVao === 0 && (i === 2 || i === 3)) continue; 
+                    if (padraoVao === 1 && i < 2) continue;               
+                    if (padraoVao === 2 && i > 3) continue;               
+                }
+
+                const alturaBlocoUnitario = tipoParede === "espinho" ? 2.5 : 1.15; 
+                const andares = tipoParede === "espinho" ? 1 : 2;
+
+                for (let andar = 0; andar < andares; andar++) {
+                    const blocoGeo = new THREE.BoxGeometry(larguraBloco, alturaBlocoUnitario, profundidadeBloco);
+                    const bloco = new THREE.Mesh(blocoGeo, materialUsado);
+                    
+                    let posY = (alturaBlocoUnitario / 2) + (andar * alturaBlocoUnitario);
+                    bloco.position.set(-5.7 + (i * 2.4), posY, 0);
+
+                    if (tipoParede !== "espinho") {
+                        const geoBorda = new THREE.EdgesGeometry(blocoGeo);
+                        const matBorda = new THREE.LineBasicMaterial({ color: corBorda, linewidth: 2 });
+                        const neonBorda = new THREE.LineSegments(geoBorda, matBorda);
+                        bloco.add(neonBorda);
+                        listaBordasNeon.push(neonBorda);
+                    }
+
+                    if (tipoParede === "espinho") {
+                        const hg = new THREE.ConeGeometry(0.2, 0.5, 5);
+                        const hm = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                        for(let j = -1; j <= 1; j++) {
+                            const esp = new THREE.Mesh(hg, hm);
+                            esp.position.set(j * 0.8, 0, profundidadeBloco/2 + 0.1);
+                            esp.rotation.x = Math.PI / 2;
+                            bloco.add(esp);
+                        }
+                    }
+
+                    if (tipoParede === "quebravel" && (i === 2 || i === 3)) {
+                        bloco.userData = { fragil: true, andar: andar, coluna: i, largura: larguraBloco, altura: alturaBlocoUnitario, profundidade: profundidadeBloco };
+                        const marca = new THREE.Mesh(new THREE.BoxGeometry(0.2, alturaBlocoUnitario + 0.02, profundidadeBloco + 0.05), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+                        bloco.add(marca);
+                    } else {
+                        bloco.userData = { fragil: false, largura: larguraBloco, altura: alturaBlocoUnitario, profundidade: profundidadeBloco };
+                    }
+
+                    bloco.name = `bloco_${i}_${andar}`;
+                    grupoParede.add(bloco);
+                }
+            }
+
+            cena.add(grupoParede);
+            listaParedes.push(grupoParede);
+        }
+
+        // --- MODELAGEM PERSONAGENS ---
+        function criarStumbler(corCamisa, corCalca) {
+            const grupo = new THREE.Group();
+            const matPele = new THREE.MeshStandardMaterial({ color: 0xffcca3, roughness: 0.5 });
+            const matCamisa = new THREE.MeshStandardMaterial({ color: corCamisa, roughness: 0.3 });
+            const matCalca = new THREE.MeshStandardMaterial({ color: corCalca, roughness: 0.3 });
+
+            const modeloCorpo = new THREE.Group();
+            modeloCorpo.name = "modeloCorpo";
+
+            const corpo = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 0.8, 16), matCamisa);
+            corpo.position.y = 0.8;
+            modeloCorpo.add(corpo);
+
+            const cabeca = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), matPele);
+            cabeca.position.y = 1.45;
+            modeloCorpo.add(cabeca);
+
+            const om = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const oE = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), om); oE.position.set(-0.15, 1.5, 0.35);
+            const oD = oE.clone(); oD.position.x = 0.15;
+            modeloCorpo.add(oE, oD);
+
+            const bracoGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.4, 8); bracoGeo.translate(0, -0.2, 0);
+            const pivotBE = new THREE.Group(); pivotBE.name = "bracoEsquerdo"; pivotBE.position.set(-0.55, 1.1, 0); pivotBE.add(new THREE.Mesh(bracoGeo, matCamisa));
+            const pivotBD = new THREE.Group(); pivotBD.name = "bracoDireito"; pivotBD.position.set(0.55, 1.1, 0); pivotBD.add(new THREE.Mesh(bracoGeo, matCamisa));
+            modeloCorpo.add(pivotBE, pivotBD);
+
+            const pernaGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.4, 8); pernaGeo.translate(0, -0.2, 0);
+            const pivotPE = new THREE.Group(); pivotPE.name = "pernaEsquerda"; pivotPE.position.set(-0.22, 0.5, 0); pivotPE.add(new THREE.Mesh(pernaGeo, matCalca));
+            const pivotPD = new THREE.Group(); pivotPD.name = "pernaDireita"; pivotPD.position.set(0.22, 0.5, 0); pivotPD.add(new THREE.Mesh(pernaGeo, matCalca));
+            modeloCorpo.add(pivotPE, pivotPD);
+
+            grupo.add(modeloCorpo);
+            return grupo;
+        }
+
+        const jogador = criarStumbler(0x3a86ff, 0xffbe0b);
+        jogador.position.set(0, 0, 6); 
+        cena.add(jogador);
+
+        const inimigo = criarStumbler(0xff006e, 0x8338ec);
+        inimigo.position.set(2, 0, 4);
+        cena.add(inimigo);
+
+        // --- SISTEMA FÍSICO ---
+        let jogadorVelY = 0, inimigoVelX = 0, inimigoVelZ = 0;
+        let velAdicionalX = 0, velAdicionalZ = 0;
+        let atualMovX = 0, atualMovZ = 0; 
+        const gravidade = -0.011;
+        let noChao = true;
+        let statusPulo = 0; 
+        let tempoUltimoPulo = 0; 
+
+        let entradaJoystick = { x: 0, z: 0 }; 
+        let direcaoMovimento = { x: 0, z: 0 }; 
+        let tempoAnimacao = 0;
+
+        let frameDoMergulho = 0;
+        let frameDoSoco = 0;
+
+        let estaEliminado = false;
+        let forcaMorte = { x: 0, y: 0, z: 0 };
+
+        const raioJogador = 0.45;
+        const alturaJogador = 1.8;
+
+        // --- CONFIG CONTROLES ---
+        let cameraAnguloX = 0.4; let cameraAnguloY = 0; let cameraDistancia = 7.5;
+        let idToqueCamera = null; let ultimaPosTouch = { x: 0, y: 0 };
+
+        const joystick = document.getElementById('joystick-container');
+        const stick = document.getElementById('joystick-stick');
+        let idToqueJoystick = null; let jCentro = { x: 0, y: 0 };
+
+        function atualizarCentroJoystick() {
+            const rect = joystick.getBoundingClientRect();
+            jCentro = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        }
+
+        window.addEventListener('touchstart', (e) => {
+            if (estaEliminado) return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                let toque = e.changedTouches[i];
+                if (toque.target.id === 'btn-fullscreen') return;
+
+                if (toque.clientX < window.innerWidth / 2 && idToqueJoystick === null) {
+                    let rect = joystick.getBoundingClientRect();
+                    let dist = Math.hypot(toque.clientX - (rect.left + rect.width/2), toque.clientY - (rect.top + rect.height/2));
+                    if(dist < 80) { idToqueJoystick = toque.identifier; atualizarCentroJoystick(); }
+                } 
+                else if (toque.clientX >= window.innerWidth / 2 && idToqueCamera === null && toque.target.tagName !== 'BUTTON') {
+                    idToqueCamera = toque.identifier;
+                    ultimaPosTouch.x = toque.clientX; ultimaPosTouch.y = toque.clientY;
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            for (let i = 0; i < e.touches.length; i++) {
+                let toque = e.touches[i];
+                if (toque.identifier === idToqueJoystick && !estaEliminado) {
+                    let deltaX = toque.clientX - jCentro.x; let deltaY = toque.clientY - jCentro.y;
+                    const raioMaximo = 40; const distancia = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                    if (distancia > 0) {
+                        let limiteX = distancia > raioMaximo ? (deltaX / distancia) * raioMaximo : deltaX;
+                        let limiteY = distancia > raioMaximo ? (deltaY / distancia) * raioMaximo : deltaY;
+                        stick.style.transform = `translate(${limiteX}px, ${limiteY}px)`;
+                        entradaJoystick.x = limiteX / raioMaximo; entradaJoystick.z = limiteY / raioMaximo;
+                    }
+                }
+                if (toque.identifier === idToqueCamera) {
+                    let movX = toque.clientX - ultimaPosTouch.x; let movY = toque.clientY - ultimaPosTouch.y;
+                    cameraAnguloY -= movX * 0.007; cameraAnguloX += movY * 0.005;
+                    cameraAnguloX = Math.max(0.1, Math.min(Math.PI / 2.5, cameraAnguloX));
+                    ultimaPosTouch.x = toque.clientX; ultimaPosTouch.y = toque.clientY;
+                }
+            }
+        });
+
+        window.addEventListener('touchend', (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                let id = e.changedTouches[i].identifier;
+                if (id === idToqueJoystick) {
+                    idToqueJoystick = null; stick.style.transform = 'translate(0px, 0px)';
+                    entradaJoystick = { x: 0, z: 0 }; direcaoMovimento = { x: 0, z: 0 };
+                }
+                if (id === idToqueCamera) idToqueCamera = null;
+            }
+        });
+
+        // --- MECÂNICA DE PULO ---
+        function realizarPulo() {
+            if (estaEliminado) return;
+            
+            let agora = Date.now();
+            if (agora - tempoUltimoPulo < 130) return; 
+
+            const mCorpo = jogador.getObjectByName("modeloCorpo");
+
+            if (noChao) statusPulo = 0;
+
+            if (noChao && statusPulo === 0) {
+                jogadorVelY = 0.22; 
+                noChao = false; 
+                statusPulo = 1;
+                tempoUltimoPulo = agora;
+            } 
+            else if (statusPulo === 1 || (!noChao && statusPulo === 0)) {
+                statusPulo = 2;
+                jogadorVelY = 0.12; 
+                frameDoMergulho = 7; 
+                tempoUltimoPulo = agora;
+
+                let angulo = jogador.rotation.y;
+                if (entradaJoystick.x === 0 && entradaJoystick.z === 0) {
+                    velAdicionalX = Math.sin(angulo) * 0.45; 
+                    velAdicionalZ = Math.cos(angulo) * 0.45;
+                } else {
+                    velAdicionalX = direcaoMovimento.x * 0.45;
+                    velAdicionalZ = direcaoMovimento.z * 0.45;
+                }
+
+                mCorpo.rotation.x = Math.PI / 2.3; 
+                mCorpo.position.y = 0.4;
+            }
+        }
+
+        function realizarSoco() {
+            if (estaEliminado) return;
+            const bracoD = jogador.getObjectByName("bracoDireito");
+            if (!bracoD) return;
+
+            bracoD.rotation.x = -1.6;
+            setTimeout(() => { bracoD.rotation.x = 0; }, 150);
+            frameDoSoco = 4; 
+
+            const direcaoOlhar = jogador.rotation.y;
+            velAdicionalX = Math.sin(direcaoOlhar) * 0.16;
+            velAdicionalZ = Math.cos(direcaoOlhar) * 0.16;
+
+            const distanciaAteInimigo = jogador.position.distanceTo(inimigo.position);
+            if (distanciaAteInimigo < 2.2) {
+                let diffX = inimigo.position.x - jogador.position.x;
+                let diffZ = inimigo.position.z - jogador.position.z;
+                const magnitude = Math.sqrt(diffX * diffX + diffZ * diffZ) || 1;
+                inimigoVelX = (diffX / magnitude) * 0.75; 
+                inimigoVelZ = (diffZ / magnitude) * 0.75;
+            }
+        }
+
+        document.getElementById('btn-pulo').addEventListener('touchstart', (e) => { e.preventDefault(); realizarPulo(); });
+        document.getElementById('btn-soco').addEventListener('touchstart', (e) => { e.preventDefault(); realizarSoco(); });
+
+        function ativarImpactoMorte(direcaoX, direcaoZ) {
+            if (estaEliminado) return;
+            estaEliminado = true;
+            // Configura forças para empurrar violentamente para TRÁS (Z positi
