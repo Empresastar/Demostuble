@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Stumble Guys Mobile - Spike Knockback Fixed</title>
+    <title>Block Dash Mobile - GitHub Version</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: sans-serif; user-select: none; background: #02020a; }
         #canvas-container { width: 100vw; height: 100vh; display: block; }
@@ -421,4 +421,6 @@
         function ativarImpactoMorte(direcaoX, direcaoZ) {
             if (estaEliminado) return;
             estaEliminado = true;
-            // Configura forças para empurrar violentamente para TRÁS (Z positi
+            forcaMorte.x = direcaoX * 0.2;
+            forcaMorte.y = 0.23; 
+           
